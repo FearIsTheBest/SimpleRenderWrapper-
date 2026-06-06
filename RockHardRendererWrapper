@@ -1,44 +1,50 @@
--- RenderWindow polyfill — makes the original SimpleRenderWrapper ui.lua work
--- on any executor (no Synapse V3 required). Paste this ABOVE ui.lua, or host
--- it as a separate file and loadstring it first.
+-- RenderWindow polyfill — ImGui/Synapse V3 aesthetic
+-- Matches the dark grey + orange accent style from Synapse X V3
 
 local UIS = game:GetService("UserInputService")
 
--- ─── theme ───────────────────────────────────────────────────────────────────
 local T = {
-    bg         = Color3.fromRGB(18, 18, 24),
-    header     = Color3.fromRGB(28, 28, 38),
-    accent     = Color3.fromRGB(100, 80, 220),
-    element    = Color3.fromRGB(32, 32, 44),
-    elementHov = Color3.fromRGB(44, 44, 60),
-    divider    = Color3.fromRGB(50, 50, 68),
-    text       = Color3.fromRGB(220, 220, 240),
-    textDim    = Color3.fromRGB(140, 140, 160),
+    bg         = Color3.fromRGB(37, 37, 37),
+    bgDark     = Color3.fromRGB(28, 28, 28),
+    bgDarker   = Color3.fromRGB(22, 22, 22),
+    header     = Color3.fromRGB(45, 45, 45),
+    tabActive  = Color3.fromRGB(210, 100, 20),
+    tabInact   = Color3.fromRGB(55, 55, 55),
+    element    = Color3.fromRGB(50, 50, 50),
+    elementHov = Color3.fromRGB(65, 65, 65),
+    border     = Color3.fromRGB(60, 60, 60),
+    text       = Color3.fromRGB(220, 220, 220),
+    textDim    = Color3.fromRGB(160, 160, 160),
+    accent     = Color3.fromRGB(210, 100, 20),
     white      = Color3.fromRGB(255, 255, 255),
-    red        = Color3.fromRGB(200, 60, 60),
-    font       = Enum.Font.GothamMedium,
-    fontBold   = Enum.Font.GothamBold,
+    font       = Enum.Font.Code,
+    fontSz     = 13,
 }
 
--- ─── helpers ─────────────────────────────────────────────────────────────────
 local function make(class, props, parent)
     local o = Instance.new(class)
     for k,v in pairs(props) do o[k]=v end
-    if parent then o.Parent = parent end
+    if parent then o.Parent=parent end
     return o
 end
-local function corner(r,p)  make("UICorner",{CornerRadius=UDim.new(0,r)},p) end
-local function pad(t,b,l,r,p) make("UIPadding",{PaddingTop=UDim.new(0,t),PaddingBottom=UDim.new(0,b),PaddingLeft=UDim.new(0,l),PaddingRight=UDim.new(0,r)},p) end
-local function list(sp,p) return make("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,sp)},p) end
+local function border(p)
+    make("UIStroke",{Color=T.border,Thickness=1},p)
+end
+local function list(sp,p)
+    return make("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,sp)},p)
+end
+local function pad(t,b,l,r,p)
+    make("UIPadding",{PaddingTop=UDim.new(0,t),PaddingBottom=UDim.new(0,b),PaddingLeft=UDim.new(0,l),PaddingRight=UDim.new(0,r)},p)
+end
 local function signal()
-    local cbs = {}
+    local cbs={}
     return {
-        Connect = function(self, fn) table.insert(cbs, fn) end,
-        Fire    = function(self, ...) for _,fn in ipairs(cbs) do fn(...) end end,
+        Connect=function(self,fn) table.insert(cbs,fn) end,
+        Fire=function(self,...) for _,fn in ipairs(cbs) do fn(...) end end,
     }
 end
-local function draggable(handle, root)
-    local drag, ds, sp
+local function draggable(handle,root)
+    local drag,ds,sp
     handle.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true;ds=i.Position;sp=root.Position end
     end)
@@ -53,246 +59,212 @@ local function draggable(handle, root)
     end)
 end
 
--- ─── RenderChildBase mixin ───────────────────────────────────────────────────
--- All child-creating methods live here; mixed into every container class.
+-- ─── ChildBase ────────────────────────────────────────────────────────────────
 local ChildBase = {}
 
 function ChildBase:Button()
-    local btn = make("TextButton",{
-        Size=UDim2.new(1,0,0,32), BackgroundColor3=T.element,
-        Text="", TextColor3=T.text, Font=T.font, TextSize=13, AutoButtonColor=false,
-    }, self._frame)
-    corner(6,btn)
-    btn.MouseEnter:Connect(function() btn.BackgroundColor3=T.elementHov end)
-    btn.MouseLeave:Connect(function() btn.BackgroundColor3=T.element end)
-    local obj = {Label="", OnUpdated=signal(), _btn=btn}
+    local btn=make("TextButton",{
+        Size=UDim2.new(1,0,0,22),
+        BackgroundColor3=T.element,
+        Text="",
+        TextColor3=T.text,
+        Font=T.font,
+        TextSize=T.fontSz,
+        AutoButtonColor=false,
+    },self._frame)
+    border(btn)
+    local obj={Label="",OnUpdated=signal()}
     setmetatable(obj,{__newindex=function(t,k,v) rawset(t,k,v)
         if k=="Label" then btn.Text=v end
     end})
+    btn.MouseEnter:Connect(function() btn.BackgroundColor3=T.elementHov end)
+    btn.MouseLeave:Connect(function() btn.BackgroundColor3=T.element end)
     btn.MouseButton1Click:Connect(function() obj.OnUpdated:Fire() end)
     return obj
 end
 
 function ChildBase:CheckBox()
-    local row = make("Frame",{Size=UDim2.new(1,0,0,32),BackgroundColor3=T.element},self._frame)
-    corner(6,row)
-    local lbl = make("TextLabel",{Size=UDim2.new(1,-52,1,0),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,Text="",TextColor3=T.text,Font=T.font,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left},row)
-    local track = make("Frame",{Size=UDim2.new(0,36,0,20),Position=UDim2.new(1,-46,0.5,-10),BackgroundColor3=Color3.fromRGB(55,55,72)},row)
-    corner(10,track)
-    local knob = make("Frame",{Size=UDim2.new(0,14,0,14),Position=UDim2.new(0,3,0.5,-7),BackgroundColor3=T.white},track)
-    corner(7,knob)
-    local state = false
-    local obj = {Label="", OnUpdated=signal()}
+    local row=make("Frame",{Size=UDim2.new(1,0,0,20),BackgroundTransparency=1},self._frame)
+    local box=make("Frame",{Size=UDim2.new(0,13,0,13),Position=UDim2.new(0,0,0.5,-6),BackgroundColor3=T.element},row)
+    border(box)
+    local check=make("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",TextColor3=T.accent,Font=T.fontBold or T.font,TextSize=12},box)
+    local lbl=make("TextLabel",{Size=UDim2.new(1,-20,1,0),Position=UDim2.new(0,18,0,0),BackgroundTransparency=1,Text="",TextColor3=T.text,Font=T.font,TextSize=T.fontSz,TextXAlignment=Enum.TextXAlignment.Left},row)
+    local state=false
+    local obj={Label="",OnUpdated=signal()}
     setmetatable(obj,{__newindex=function(t,k,v) rawset(t,k,v)
         if k=="Label" then lbl.Text=v end
     end})
-    local hit = make("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text=""},row)
+    local hit=make("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text=""},row)
     hit.MouseButton1Click:Connect(function()
         state=not state
-        track.BackgroundColor3 = state and T.accent or Color3.fromRGB(55,55,72)
-        knob.Position = state and UDim2.new(1,-17,0.5,-7) or UDim2.new(0,3,0.5,-7)
+        check.Text=state and "✓" or ""
         obj.OnUpdated:Fire(state)
     end)
     return obj
 end
 
 function ChildBase:IntSlider()
-    local frame = make("Frame",{Size=UDim2.new(1,0,0,44),BackgroundColor3=T.element},self._frame)
-    corner(6,frame); pad(6,6,10,10,frame)
-    local inner = make("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1},frame)
-    local il = list(4,inner)
-    local hrow = make("Frame",{Size=UDim2.new(1,0,0,14),BackgroundTransparency=1},inner)
-    local namelbl = make("TextLabel",{Size=UDim2.new(0.7,0,1,0),BackgroundTransparency=1,Text="",TextColor3=T.text,Font=T.font,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left},hrow)
-    local vallbl  = make("TextLabel",{Size=UDim2.new(0.3,0,1,0),Position=UDim2.new(0.7,0,0,0),BackgroundTransparency=1,Text="0",TextColor3=T.textDim,Font=T.font,TextSize=12,TextXAlignment=Enum.TextXAlignment.Right},hrow)
-    local track = make("Frame",{Size=UDim2.new(1,0,0,6),BackgroundColor3=T.divider},inner)
-    corner(3,track)
-    local fill = make("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.accent},track)
-    corner(3,fill)
-    il:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() inner.Size=UDim2.new(1,0,0,il.AbsoluteContentSize.Y) end)
+    local frame=make("Frame",{Size=UDim2.new(1,0,0,38),BackgroundTransparency=1},self._frame)
+    local lbl=make("TextLabel",{Size=UDim2.new(1,0,0,16),BackgroundTransparency=1,Text="",TextColor3=T.text,Font=T.font,TextSize=T.fontSz,TextXAlignment=Enum.TextXAlignment.Left},frame)
+    local trackBg=make("Frame",{Size=UDim2.new(1,0,0,16),Position=UDim2.new(0,0,0,18),BackgroundColor3=T.bgDarker},frame)
+    border(trackBg)
+    local fill=make("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.accent},trackBg)
+    local vallbl=make("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="0",TextColor3=T.white,Font=T.font,TextSize=11,TextXAlignment=Enum.TextXAlignment.Center},trackBg)
 
-    local obj = {Label="", Min=0, Max=100, OnUpdated=signal()}
-    local drag = false
+    local obj={Label="",Min=0,Max=100,OnUpdated=signal()}
+    local drag=false
     local function upd(x)
-        local mn,mx = obj.Min, obj.Max
-        local t = math.clamp((x-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1)
-        local v = math.floor(mn+t*(mx-mn)+0.5)
-        fill.Size=UDim2.new(t,0,1,0); vallbl.Text=tostring(v)
+        local t=math.clamp((x-trackBg.AbsolutePosition.X)/trackBg.AbsoluteSize.X,0,1)
+        local v=math.floor(obj.Min+t*(obj.Max-obj.Min)+0.5)
+        fill.Size=UDim2.new(t,0,1,0)
+        vallbl.Text=tostring(v)
         obj.OnUpdated:Fire(v)
     end
-    track.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true;upd(i.Position.X) end end)
+    trackBg.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true;upd(i.Position.X) end end)
     UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end end)
     UIS.InputChanged:Connect(function(i) if drag and i.UserInputType==Enum.UserInputType.MouseMovement then upd(i.Position.X) end end)
-    setmetatable(obj,{__newindex=function(t,k,v) rawset(t,k,v)
-        if k=="Label" then namelbl.Text=v end
-    end})
+    setmetatable(obj,{__newindex=function(t,k,v) rawset(t,k,v) if k=="Label" then lbl.Text=v end end})
     return obj
 end
 
 function ChildBase:Combo()
-    local frame = make("Frame",{Size=UDim2.new(1,0,0,32),BackgroundColor3=T.element,ClipsDescendants=true},self._frame)
-    corner(6,frame)
-    local namelbl = make("TextLabel",{Size=UDim2.new(0.55,0,0,32),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,Text="",TextColor3=T.text,Font=T.font,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left},frame)
-    local sellbl  = make("TextLabel",{Size=UDim2.new(0.4,0,0,32),Position=UDim2.new(0.55,-10,0,0),BackgroundTransparency=1,Text="",TextColor3=T.accent,Font=T.font,TextSize=13,TextXAlignment=Enum.TextXAlignment.Right},frame)
-    local listF = make("Frame",{Size=UDim2.new(1,0,0,0),Position=UDim2.new(0,0,0,32),BackgroundColor3=T.bg,Visible=false},frame)
-    corner(6,listF); local ll=list(2,listF); pad(4,4,4,4,listF)
+    local frame=make("Frame",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,ClipsDescendants=false},self._frame)
+    local row=make("Frame",{Size=UDim2.new(1,0,0,22),BackgroundColor3=T.bgDarker},frame)
+    border(row)
+    local sellbl=make("TextLabel",{Size=UDim2.new(1,-22,1,0),Position=UDim2.new(0,4,0,0),BackgroundTransparency=1,Text="",TextColor3=T.text,Font=T.font,TextSize=T.fontSz,TextXAlignment=Enum.TextXAlignment.Left},row)
+    local arrow=make("TextLabel",{Size=UDim2.new(0,22,1,0),Position=UDim2.new(1,-22,0,0),BackgroundColor3=T.accent,Text="▼",TextColor3=T.white,Font=T.font,TextSize=10},row)
+    local namelbl -- not shown in combo-only mode, used when Label set
 
-    local obj = {Label="", Items={}, SelectedItem=1, OnUpdated=signal()}
+    local listF=make("Frame",{Size=UDim2.new(1,0,0,0),Position=UDim2.new(0,0,0,22),BackgroundColor3=T.bgDark,Visible=false,ZIndex=10,ClipsDescendants=false},frame)
+    border(listF)
+    local ll=list(0,listF)
+
+    local obj={Label="",Items={},SelectedItem=1,OnUpdated=signal()}
     local open=false
 
     local function rebuild()
         for _,c in ipairs(listF:GetChildren()) do
-            if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end
+            if not c:IsA("UIListLayout") then c:Destroy() end
         end
         for i,opt in ipairs(obj.Items) do
-            local ob=make("TextButton",{Size=UDim2.new(1,-8,0,26),BackgroundColor3=T.element,Text=opt,TextColor3=T.text,Font=T.font,TextSize=12,AutoButtonColor=false},listF)
-            corner(4,ob)
-            ob.MouseEnter:Connect(function() ob.BackgroundColor3=T.elementHov end)
-            ob.MouseLeave:Connect(function() ob.BackgroundColor3=T.element end)
+            local ob=make("TextButton",{Size=UDim2.new(1,0,0,20),BackgroundColor3=T.bgDark,Text=opt,TextColor3=T.text,Font=T.font,TextSize=T.fontSz,TextXAlignment=Enum.TextXAlignment.Left,AutoButtonColor=false},listF)
+            pad(0,0,4,0,ob)
+            ob.MouseEnter:Connect(function() ob.BackgroundColor3=T.element end)
+            ob.MouseLeave:Connect(function() ob.BackgroundColor3=T.bgDark end)
             ob.MouseButton1Click:Connect(function()
                 obj.SelectedItem=i; sellbl.Text=opt
                 open=false; listF.Visible=false
-                frame.Size=UDim2.new(1,0,0,32); frame.ClipsDescendants=true
+                frame.Size=UDim2.new(1,0,0,22)
             end)
         end
-        if obj.Items[1] then sellbl.Text=obj.Items[1] end
+        if obj.Items[1] then sellbl.Text=obj.Items[obj.SelectedItem] or obj.Items[1] end
     end
 
     ll:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        listF.Size=UDim2.new(1,0,0,ll.AbsoluteContentSize.Y+8)
+        listF.Size=UDim2.new(1,0,0,ll.AbsoluteContentSize.Y)
     end)
 
-    local hit=make("TextButton",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1,Text=""},frame)
+    local hit=make("TextButton",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,Text="",ZIndex=5},frame)
     hit.MouseButton1Click:Connect(function()
         open=not open; listF.Visible=open
-        if open then frame.ClipsDescendants=false; frame.Size=UDim2.new(1,0,0,32+ll.AbsoluteContentSize.Y+12)
-        else frame.ClipsDescendants=true; frame.Size=UDim2.new(1,0,0,32) end
+        frame.Size=UDim2.new(1,0,0,open and 22+ll.AbsoluteContentSize.Y or 22)
     end)
 
     setmetatable(obj,{__newindex=function(t,k,v) rawset(t,k,v)
-        if k=="Label" then namelbl.Text=v
-        elseif k=="Items" then rawset(t,k,v); rebuild() end
+        if k=="Items" then rawset(t,k,v); rebuild() end
     end})
     return obj
 end
 
 function ChildBase:TextBox()
-    local frame = make("Frame",{Size=UDim2.new(1,0,0,32),BackgroundColor3=T.element},self._frame)
-    corner(6,frame)
-    local namelbl=make("TextLabel",{Size=UDim2.new(0.5,0,1,0),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,Text="",TextColor3=T.text,Font=T.font,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left},frame)
-    local box=make("TextBox",{Size=UDim2.new(0.45,-6,0,22),Position=UDim2.new(0.55,0,0.5,-11),BackgroundColor3=T.bg,Text="",PlaceholderText="Enter value...",TextColor3=T.text,PlaceholderColor3=T.textDim,Font=T.font,TextSize=12,ClearTextOnFocus=false},frame)
-    corner(4,box); pad(0,0,6,6,box)
-    local obj = {Label="", Value="", OnUpdated=signal()}
-    box.FocusLost:Connect(function(enter)
-        obj.Value=box.Text
-        if enter then obj.OnUpdated:Fire(box.Text) end
-    end)
-    setmetatable(obj,{__newindex=function(t,k,v) rawset(t,k,v)
-        if k=="Label" then namelbl.Text=v end
-    end})
+    local frame=make("Frame",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1},self._frame)
+    local box=make("TextBox",{Size=UDim2.new(1,0,1,0),BackgroundColor3=T.bgDarker,Text="",PlaceholderText="",TextColor3=T.text,PlaceholderColor3=T.textDim,Font=T.font,TextSize=T.fontSz,ClearTextOnFocus=false},frame)
+    border(box); pad(0,0,4,4,box)
+    local obj={Label="",Value="",OnUpdated=signal()}
+    box.FocusLost:Connect(function(enter) obj.Value=box.Text; if enter then obj.OnUpdated:Fire(box.Text) end end)
+    setmetatable(obj,{__newindex=function(t,k,v) rawset(t,k,v) end})
     return obj
 end
 
 function ChildBase:Label()
-    local lbl=make("TextLabel",{Size=UDim2.new(1,0,0,16),BackgroundTransparency=1,Text="",TextColor3=T.textDim,Font=T.font,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left},self._frame)
+    local lbl=make("TextLabel",{Size=UDim2.new(1,0,0,16),BackgroundTransparency=1,Text="",TextColor3=T.textDim,Font=T.font,TextSize=T.fontSz,TextXAlignment=Enum.TextXAlignment.Left},self._frame)
     local obj={Label=""}
     setmetatable(obj,{__newindex=function(t,k,v) rawset(t,k,v) if k=="Label" then lbl.Text=v end end})
     return obj
 end
 
 function ChildBase:Separator()
-    local f=make("Frame",{Size=UDim2.new(1,0,0,1),BackgroundColor3=T.divider},self._frame)
-    return f
+    return make("Frame",{Size=UDim2.new(1,0,0,1),BackgroundColor3=T.border},self._frame)
 end
 
 function ChildBase:Collapsable(name, defaultOpen)
-    local wrapper=make("Frame",{Size=UDim2.new(1,0,0,30),BackgroundTransparency=1,ClipsDescendants=false},self._frame)
-    local hbtn=make("TextButton",{Size=UDim2.new(1,0,0,28),BackgroundColor3=T.header,Text="",AutoButtonColor=false},wrapper)
-    corner(6,hbtn)
-    make("TextLabel",{Size=UDim2.new(1,-30,1,0),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,Text=name,TextColor3=T.text,Font=T.fontBold,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left},hbtn)
-    local arrow=make("TextLabel",{Size=UDim2.new(0,20,1,0),Position=UDim2.new(1,-24,0,0),BackgroundTransparency=1,Text="▼",TextColor3=T.textDim,Font=T.font,TextSize=10},hbtn)
-    local content=make("Frame",{Size=UDim2.new(1,0,0,0),Position=UDim2.new(0,0,0,30),BackgroundColor3=T.bg,ClipsDescendants=false},wrapper)
-    corner(6,content); pad(6,6,6,6,content); local cl=list(4,content)
+    local wrapper=make("Frame",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1},self._frame)
+    local hbtn=make("TextButton",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,Text="",AutoButtonColor=false},wrapper)
+    make("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="▶  "..name,TextColor3=T.text,Font=T.font,TextSize=T.fontSz,TextXAlignment=Enum.TextXAlignment.Left},hbtn)
+    local arrowlbl=hbtn:FindFirstChildWhichIsA("TextLabel")
+
+    local content=make("Frame",{Size=UDim2.new(1,-8,0,0),Position=UDim2.new(0,8,0,20),BackgroundTransparency=1},wrapper)
+    local cl=list(2,content)
     local function refresh()
-        local h=cl.AbsoluteContentSize.Y+12
-        content.Size=UDim2.new(1,0,0,h)
-        wrapper.Size=UDim2.new(1,0,0,30+(content.Visible and h+2 or 0))
+        local h=cl.AbsoluteContentSize.Y
+        content.Size=UDim2.new(1,-8,0,h)
+        wrapper.Size=UDim2.new(1,0,0,18+(content.Visible and h+2 or 0))
     end
     cl:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refresh)
     local isOpen=defaultOpen or false
-    content.Visible=isOpen; arrow.Text=isOpen and "▲" or "▼"; refresh()
+    content.Visible=isOpen
+    arrowlbl.Text=(isOpen and "▼  " or "▶  ")..name
+    refresh()
     hbtn.MouseButton1Click:Connect(function()
         isOpen=not isOpen; content.Visible=isOpen
-        arrow.Text=isOpen and "▲" or "▼"; refresh()
+        arrowlbl.Text=(isOpen and "▼  " or "▶  ")..name
+        refresh()
     end)
-    local obj = {_frame=content}
+    local obj={_frame=content}
     for k,v in pairs(ChildBase) do obj[k]=v end
     return obj
 end
 
 function ChildBase:SameLine()
-    local row=make("Frame",{Size=UDim2.new(1,0,0,32),BackgroundTransparency=1},self._frame)
-    local obj={_frame=row, _children={}}
+    local row=make("Frame",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1},self._frame)
+    make("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4)},row)
+    local obj={_frame=row}
     for k,v in pairs(ChildBase) do obj[k]=v end
-    -- override child creators to auto-position horizontally
-    local origButton=obj.Button
-    local origCheckBox=obj.CheckBox
-    local function reflow(container)
-        local kids=container._children
-        local n=#kids
-        for i,el in ipairs(kids) do
-            el.Size=UDim2.new(1/n, i<n and -3 or 0, 1, 0)
-            el.Position=UDim2.new((i-1)/n, i>1 and 3 or 0, 0, 0)
+    -- override to auto-size horizontally
+    local function wrap(orig)
+        return function(self2)
+            local r=orig(self2)
+            -- find last added gui child and let list layout handle it
+            return r
         end
-    end
-    function obj:Button()
-        local b=origButton(self)
-        table.insert(self._children, self._frame:FindFirstChildWhichIsA("TextButton") or self._frame:GetChildren()[#self._frame:GetChildren()])
-        -- grab actual frame child
-        local ch = self._frame:GetChildren()
-        for i=#ch,1,-1 do
-            if ch[i]:IsA("TextButton") or ch[i]:IsA("Frame") then
-                table.insert(self._children, ch[i]); break
-            end
-        end
-        reflow(self); return b
-    end
-    function obj:CheckBox()
-        local b=origCheckBox(self)
-        local ch=self._frame:GetChildren()
-        for i=#ch,1,-1 do
-            if ch[i]:IsA("Frame") then table.insert(self._children,ch[i]); break end
-        end
-        reflow(self); return b
     end
     return obj
 end
 
 function ChildBase:TabMenu()
-    -- TabMenu inside a window — creates a tab bar + page container
-    local tabBar=make("Frame",{Size=UDim2.new(1,0,0,28),BackgroundColor3=T.header},self._frame)
-    make("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,2)},tabBar)
-    pad(4,4,6,6,tabBar)
-    local pageContainer=make("Frame",{Size=UDim2.new(1,0,1,-30),Position=UDim2.new(0,0,0,30),BackgroundTransparency=1},self._frame)
+    local tabBar=make("Frame",{Size=UDim2.new(1,0,0,24),BackgroundColor3=T.bgDark},self._frame)
+    make("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,0)},tabBar)
+    local pageContainer=make("Frame",{Size=UDim2.new(1,0,1,-24),Position=UDim2.new(0,0,0,24),BackgroundTransparency=1},self._frame)
+    pad(4,4,4,4,pageContainer)
     local pages,btns={},{}
     local obj={_tabBar=tabBar,_pageContainer=pageContainer,_pages=pages,_tabBtns=btns,SelectedItem=0,OnUpdated=signal()}
     function obj:Add(label)
         local scroll=make("ScrollingFrame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,ScrollBarThickness=3,ScrollBarImageColor3=T.accent,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,Visible=false},pageContainer)
-        pad(6,6,6,6,scroll); list(5,scroll)
-        local tabBtn=make("TextButton",{Size=UDim2.new(0,0,1,0),AutomaticSize=Enum.AutomaticSize.X,BackgroundColor3=T.element,Text="  "..label.."  ",TextColor3=T.textDim,Font=T.font,TextSize=12,AutoButtonColor=false},tabBar)
-        corner(5,tabBtn); pad(0,0,8,8,tabBtn)
+        list(3,scroll)
+        local tabBtn=make("TextButton",{Size=UDim2.new(0,0,1,0),AutomaticSize=Enum.AutomaticSize.X,BackgroundColor3=T.tabInact,Text=label,TextColor3=T.textDim,Font=T.font,TextSize=T.fontSz,AutoButtonColor=false,BorderSizePixel=0},tabBar)
+        pad(0,0,10,10,tabBtn)
         table.insert(pages,scroll); table.insert(btns,tabBtn)
         local myIdx=#pages
         local function select(idx)
             for i,p in ipairs(pages) do
                 p.Visible=(i==idx)
-                btns[i].TextColor3=(i==idx) and T.text or T.textDim
-                btns[i].BackgroundColor3=(i==idx) and T.accent or T.element
+                btns[i].BackgroundColor3=(i==idx) and T.tabActive or T.tabInact
+                btns[i].TextColor3=(i==idx) and T.white or T.textDim
             end
             obj.SelectedItem=idx; obj.OnUpdated:Fire(idx)
         end
         tabBtn.MouseButton1Click:Connect(function() select(myIdx) end)
         if myIdx==1 then select(1) end
-        -- return a RenderDummyWindow-like object
         local page={_frame=scroll}
         for k,v in pairs(ChildBase) do page[k]=v end
         return page
@@ -300,7 +272,7 @@ function ChildBase:TabMenu()
     return obj
 end
 
--- ─── RenderWindow ────────────────────────────────────────────────────────────
+-- ─── RenderWindow ─────────────────────────────────────────────────────────────
 RenderWindow = {}
 RenderWindow.__index = RenderWindow
 
@@ -310,29 +282,24 @@ function RenderWindow.new(title)
     local ok=pcall(function() gui.Parent=game:GetService("CoreGui") end)
     if not ok then gui.Parent=game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui") end
 
-    local root=make("Frame",{Name="Window",Size=UDim2.new(0,320,0,400),Position=UDim2.new(0.5,-160,0.5,-200),BackgroundColor3=T.bg,ClipsDescendants=true},gui)
-    corner(10,root); make("UIStroke",{Color=T.divider,Thickness=1},root)
+    local root=make("Frame",{Size=UDim2.new(0,320,0,400),Position=UDim2.new(0.5,-160,0.5,-200),BackgroundColor3=T.bg,BorderSizePixel=0},gui)
+    make("UIStroke",{Color=T.border,Thickness=1},root)
 
     -- title bar
-    local titleBar=make("Frame",{Size=UDim2.new(1,0,0,36),BackgroundColor3=T.header},root)
-    make("Frame",{Size=UDim2.new(1,0,0,10),Position=UDim2.new(0,0,1,-10),BackgroundColor3=T.header},titleBar)
-    make("TextLabel",{Size=UDim2.new(1,-40,1,0),Position=UDim2.new(0,12,0,0),BackgroundTransparency=1,Text=title,TextColor3=T.text,Font=T.fontBold,TextSize=14,TextXAlignment=Enum.TextXAlignment.Left},titleBar)
-    local closeBtn=make("TextButton",{Size=UDim2.new(0,24,0,24),Position=UDim2.new(1,-28,0.5,-12),BackgroundColor3=T.red,Text="×",TextColor3=T.white,Font=T.fontBold,TextSize=16,AutoButtonColor=false},titleBar)
-    corner(6,closeBtn)
+    local titleBar=make("Frame",{Size=UDim2.new(1,0,0,22),BackgroundColor3=T.bgDark,BorderSizePixel=0},root)
+    make("TextLabel",{Size=UDim2.new(1,-24,1,0),Position=UDim2.new(0,6,0,0),BackgroundTransparency=1,Text="▼  "..title,TextColor3=T.text,Font=T.font,TextSize=T.fontSz,TextXAlignment=Enum.TextXAlignment.Left},titleBar)
+    local closeBtn=make("TextButton",{Size=UDim2.new(0,22,1,0),Position=UDim2.new(1,-22,0,0),BackgroundColor3=Color3.fromRGB(180,40,40),Text="×",TextColor3=T.white,Font=T.font,TextSize=14,AutoButtonColor=false,BorderSizePixel=0},titleBar)
     closeBtn.MouseButton1Click:Connect(function() root.Visible=not root.Visible end)
     draggable(titleBar,root)
 
-    -- content area (tab menus etc go here)
-    local content=make("Frame",{Size=UDim2.new(1,0,1,-36),Position=UDim2.new(0,0,0,36),BackgroundTransparency=1},root)
+    local content=make("Frame",{Size=UDim2.new(1,0,1,-22),Position=UDim2.new(0,0,0,22),BackgroundTransparency=1},root)
 
     local self=setmetatable({
-        _gui=gui, _root=root, _frame=content,
-        WindowName=title, MinSize=nil, MaxSize=nil,
-        DefaultSize=Vector2.new(320,400), CanResize=false, VisibilityOverride=false,
-        Visible=true,
-    }, RenderWindow)
+        _gui=gui,_root=root,_frame=content,
+        WindowName=title,MinSize=nil,MaxSize=nil,
+        DefaultSize=Vector2.new(320,400),CanResize=false,VisibilityOverride=false,Visible=true,
+    },RenderWindow)
 
-    -- mix in all child-creating methods
     for k,v in pairs(ChildBase) do
         if RenderWindow[k]==nil then RenderWindow[k]=v end
     end
