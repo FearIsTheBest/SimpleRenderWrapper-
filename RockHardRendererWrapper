@@ -1,0 +1,737 @@
+-- SimpleRenderWrapper (ScreenGui-based, no Synapse V3 required)
+-- Drop-in replacement matching the original API
+
+local SimpleRenderWrapper = {}
+SimpleRenderWrapper.__index = SimpleRenderWrapper
+
+-- ────────────────────────────────────────────────────────────
+-- Theming
+-- ────────────────────────────────────────────────────────────
+local THEME = {
+    bg          = Color3.fromRGB(18, 18, 24),
+    header      = Color3.fromRGB(28, 28, 38),
+    accent      = Color3.fromRGB(100, 80, 220),
+    element     = Color3.fromRGB(32, 32, 44),
+    elementHov  = Color3.fromRGB(44, 44, 60),
+    divider     = Color3.fromRGB(50, 50, 68),
+    text        = Color3.fromRGB(220, 220, 240),
+    textDim     = Color3.fromRGB(140, 140, 160),
+    toggle_on   = Color3.fromRGB(100, 80, 220),
+    toggle_off  = Color3.fromRGB(55, 55, 72),
+    slider_fill = Color3.fromRGB(100, 80, 220),
+    white       = Color3.fromRGB(255, 255, 255),
+    font        = Enum.Font.GothamMedium,
+    fontBold    = Enum.Font.GothamBold,
+}
+
+-- ────────────────────────────────────────────────────────────
+-- Helpers
+-- ────────────────────────────────────────────────────────────
+local function make(class, props, parent)
+    local obj = Instance.new(class)
+    for k, v in pairs(props) do obj[k] = v end
+    if parent then obj.Parent = parent end
+    return obj
+end
+
+local function corner(radius, parent)
+    return make("UICorner", {CornerRadius = UDim.new(0, radius)}, parent)
+end
+
+local function pad(t, b, l, r, parent)
+    return make("UIPadding", {
+        PaddingTop    = UDim.new(0, t),
+        PaddingBottom = UDim.new(0, b),
+        PaddingLeft   = UDim.new(0, l),
+        PaddingRight  = UDim.new(0, r),
+    }, parent)
+end
+
+local function listLayout(spacing, parent)
+    return make("UIListLayout", {
+        SortOrder  = Enum.SortOrder.LayoutOrder,
+        Padding    = UDim.new(0, spacing),
+    }, parent)
+end
+
+-- auto-resize a frame to fit its UIListLayout content
+local function autoSize(frame, layout, extraPad)
+    extraPad = extraPad or 0
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        frame.Size = UDim2.new(1, 0, 0, layout.AbsoluteContentSize.Y + extraPad)
+    end)
+end
+
+-- dragging
+local function makeDraggable(handle, root)
+    local dragging, dragStart, startPos
+    handle.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging  = true
+            dragStart = i.Position
+            startPos  = root.Position
+        end
+    end)
+    handle.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    game:GetService("UserInputService").InputChanged:Connect(function(i)
+        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = i.Position - dragStart
+            root.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+-- ────────────────────────────────────────────────────────────
+-- Element builders
+-- ────────────────────────────────────────────────────────────
+local ElementBuilder = {}
+
+function ElementBuilder.button(container, label, callback)
+    local btn = make("TextButton", {
+        Size            = UDim2.new(1, 0, 0, 32),
+        BackgroundColor3= THEME.element,
+        Text            = label,
+        TextColor3      = THEME.text,
+        Font            = THEME.font,
+        TextSize        = 13,
+        AutoButtonColor = false,
+    }, container)
+    corner(6, btn)
+    btn.MouseEnter:Connect(function()  btn.BackgroundColor3 = THEME.elementHov end)
+    btn.MouseLeave:Connect(function()  btn.BackgroundColor3 = THEME.element end)
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+function ElementBuilder.toggle(container, label, callback)
+    local row = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 32),
+        BackgroundColor3 = THEME.element,
+    }, container)
+    corner(6, row)
+
+    make("TextLabel", {
+        Size       = UDim2.new(1, -52, 1, 0),
+        Position   = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text       = label,
+        TextColor3 = THEME.text,
+        Font       = THEME.font,
+        TextSize   = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, row)
+
+    local track = make("Frame", {
+        Size             = UDim2.new(0, 36, 0, 20),
+        Position         = UDim2.new(1, -46, 0.5, -10),
+        BackgroundColor3 = THEME.toggle_off,
+    }, row)
+    corner(10, track)
+
+    local knob = make("Frame", {
+        Size             = UDim2.new(0, 14, 0, 14),
+        Position         = UDim2.new(0, 3, 0.5, -7),
+        BackgroundColor3 = THEME.white,
+    }, track)
+    corner(7, knob)
+
+    local state = false
+
+    local function setToggle(val)
+        state = val
+        track.BackgroundColor3 = state and THEME.toggle_on or THEME.toggle_off
+        knob.Position = state
+            and UDim2.new(1, -17, 0.5, -7)
+            or  UDim2.new(0, 3,   0.5, -7)
+        callback(state)
+    end
+
+    local btn = make("TextButton", {
+        Size               = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text               = "",
+    }, row)
+    btn.MouseButton1Click:Connect(function() setToggle(not state) end)
+
+    return row
+end
+
+function ElementBuilder.slider(container, label, min, max, callback)
+    local frame = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 44),
+        BackgroundColor3 = THEME.element,
+    }, container)
+    corner(6, frame)
+    pad(6, 6, 10, 10, frame)
+
+    local inner = make("Frame", {
+        Size               = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+    }, frame)
+    local innerList = listLayout(4, inner)
+
+    local headerRow = make("Frame", {
+        Size               = UDim2.new(1, 0, 0, 14),
+        BackgroundTransparency = 1,
+    }, inner)
+
+    make("TextLabel", {
+        Size       = UDim2.new(0.7, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text       = label,
+        TextColor3 = THEME.text,
+        Font       = THEME.font,
+        TextSize   = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, headerRow)
+
+    local valLabel = make("TextLabel", {
+        Size       = UDim2.new(0.3, 0, 1, 0),
+        Position   = UDim2.new(0.7, 0, 0, 0),
+        BackgroundTransparency = 1,
+        Text       = tostring(min),
+        TextColor3 = THEME.textDim,
+        Font       = THEME.font,
+        TextSize   = 12,
+        TextXAlignment = Enum.TextXAlignment.Right,
+    }, headerRow)
+
+    local track = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 6),
+        BackgroundColor3 = THEME.divider,
+    }, inner)
+    corner(3, track)
+
+    local fill = make("Frame", {
+        Size             = UDim2.new(0, 0, 1, 0),
+        BackgroundColor3 = THEME.slider_fill,
+    }, track)
+    corner(3, fill)
+
+    autoSize(inner, innerList, 0)
+
+    local dragging = false
+    local UIS = game:GetService("UserInputService")
+
+    local function updateSlider(mouseX)
+        local abs   = track.AbsolutePosition.X
+        local width = track.AbsoluteSize.X
+        local t     = math.clamp((mouseX - abs) / width, 0, 1)
+        local val   = math.floor(min + t * (max - min) + 0.5)
+        fill.Size   = UDim2.new(t, 0, 1, 0)
+        valLabel.Text = tostring(val)
+        callback(val)
+    end
+
+    track.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            updateSlider(i.Position.X)
+        end
+    end)
+    UIS.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+            updateSlider(i.Position.X)
+        end
+    end)
+
+    return frame
+end
+
+function ElementBuilder.dropdown(container, label, options, callback)
+    local frame = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 32),
+        BackgroundColor3 = THEME.element,
+        ClipsDescendants = true,
+    }, container)
+    corner(6, frame)
+
+    local header = make("TextButton", {
+        Size               = UDim2.new(1, 0, 0, 32),
+        BackgroundTransparency = 1,
+        Text               = "",
+    }, frame)
+
+    make("TextLabel", {
+        Size       = UDim2.new(0.7, 0, 0, 32),
+        Position   = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text       = label,
+        TextColor3 = THEME.text,
+        Font       = THEME.font,
+        TextSize   = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, frame)
+
+    local selected = options[1] or ""
+    local selLabel = make("TextLabel", {
+        Size       = UDim2.new(0.5, 0, 0, 32),
+        Position   = UDim2.new(0.5, -10, 0, 0),
+        BackgroundTransparency = 1,
+        Text       = selected,
+        TextColor3 = THEME.accent,
+        Font       = THEME.font,
+        TextSize   = 13,
+        TextXAlignment = Enum.TextXAlignment.Right,
+    }, frame)
+
+    -- dropdown list
+    local list = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 0),
+        Position         = UDim2.new(0, 0, 0, 32),
+        BackgroundColor3 = THEME.bg,
+        Visible          = false,
+    }, frame)
+    corner(6, list)
+    local listLayout_ = listLayout(2, list)
+    pad(4, 4, 4, 4, list)
+
+    for _, opt in ipairs(options) do
+        local optBtn = make("TextButton", {
+            Size             = UDim2.new(1, -8, 0, 26),
+            BackgroundColor3 = THEME.element,
+            Text             = opt,
+            TextColor3       = THEME.text,
+            Font             = THEME.font,
+            TextSize         = 12,
+            AutoButtonColor  = false,
+        }, list)
+        corner(4, optBtn)
+        optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = THEME.elementHov end)
+        optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = THEME.element end)
+        optBtn.MouseButton1Click:Connect(function()
+            selected = opt
+            selLabel.Text = opt
+            list.Visible  = false
+            frame.Size    = UDim2.new(1, 0, 0, 32)
+            frame.ClipsDescendants = true
+            callback(opt)
+        end)
+    end
+
+    -- size list to content
+    listLayout_:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        list.Size = UDim2.new(1, 0, 0, listLayout_.AbsoluteContentSize.Y + 8)
+    end)
+
+    local open = false
+    header.MouseButton1Click:Connect(function()
+        open = not open
+        list.Visible = open
+        if open then
+            local listH = listLayout_.AbsoluteContentSize.Y + 8
+            frame.Size  = UDim2.new(1, 0, 0, 32 + listH + 4)
+            frame.ClipsDescendants = false
+        else
+            frame.Size  = UDim2.new(1, 0, 0, 32)
+            frame.ClipsDescendants = true
+        end
+    end)
+
+    return frame
+end
+
+function ElementBuilder.textbox(container, label, callback)
+    local frame = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 32),
+        BackgroundColor3 = THEME.element,
+    }, container)
+    corner(6, frame)
+
+    make("TextLabel", {
+        Size       = UDim2.new(0.5, 0, 1, 0),
+        Position   = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text       = label,
+        TextColor3 = THEME.text,
+        Font       = THEME.font,
+        TextSize   = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, frame)
+
+    local box = make("TextBox", {
+        Size             = UDim2.new(0.45, -6, 0, 22),
+        Position         = UDim2.new(0.55, 0, 0.5, -11),
+        BackgroundColor3 = THEME.bg,
+        Text             = "",
+        PlaceholderText  = "Enter value...",
+        TextColor3       = THEME.text,
+        PlaceholderColor3= THEME.textDim,
+        Font             = THEME.font,
+        TextSize         = 12,
+        ClearTextOnFocus = false,
+    }, frame)
+    corner(4, box)
+    pad(0, 0, 6, 6, box)
+
+    box.FocusLost:Connect(function(enter)
+        if enter and #box.Text > 0 then
+            callback(box.Text)
+        end
+    end)
+
+    return frame
+end
+
+function ElementBuilder.divider(container, label)
+    local frame = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 20),
+        BackgroundTransparency = 1,
+    }, container)
+
+    make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 1),
+        Position         = UDim2.new(0, 0, 0.5, 0),
+        BackgroundColor3 = THEME.divider,
+    }, frame)
+
+    if label and #label > 0 then
+        local lbl = make("TextLabel", {
+            Size             = UDim2.new(0, 0, 1, 0),
+            AutomaticSize    = Enum.AutomaticSize.X,
+            Position         = UDim2.new(0.5, 0, 0, 0),
+            AnchorPoint      = Vector2.new(0.5, 0),
+            BackgroundColor3 = THEME.bg,
+            Text             = "  " .. label .. "  ",
+            TextColor3       = THEME.textDim,
+            Font             = THEME.font,
+            TextSize         = 11,
+        }, frame)
+    end
+
+    return frame
+end
+
+-- ────────────────────────────────────────────────────────────
+-- Container classes (Page, Collapsable, SameLine)
+-- ────────────────────────────────────────────────────────────
+local Container = {}
+Container.__index = Container
+
+function Container:_addElement(el)
+    -- nothing extra needed; element is already parented
+end
+
+function Container:addButton(label, cb)
+    return ElementBuilder.button(self._frame, label, cb)
+end
+
+function Container:addToggle(label, cb)
+    return ElementBuilder.toggle(self._frame, label, cb)
+end
+
+function Container:addSlider(label, min, max, cb)
+    return ElementBuilder.slider(self._frame, label, min, max, cb)
+end
+
+function Container:addDropdown(label, options, cb)
+    return ElementBuilder.dropdown(self._frame, label, options, cb)
+end
+
+function Container:addTextBox(label, cb)
+    return ElementBuilder.textbox(self._frame, label, cb)
+end
+
+function Container:addDivider(label)
+    return ElementBuilder.divider(self._frame, label)
+end
+
+function Container:addCollapsable(label, defaultOpen)
+    -- wrapper frame
+    local wrapper = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 30),
+        BackgroundTransparency = 1,
+        ClipsDescendants = false,
+    }, self._frame)
+
+    -- header button
+    local headerBtn = make("TextButton", {
+        Size             = UDim2.new(1, 0, 0, 28),
+        BackgroundColor3 = THEME.header,
+        Text             = "",
+        AutoButtonColor  = false,
+    }, wrapper)
+    corner(6, headerBtn)
+
+    make("TextLabel", {
+        Size       = UDim2.new(1, -30, 1, 0),
+        Position   = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text       = label,
+        TextColor3 = THEME.text,
+        Font       = THEME.fontBold,
+        TextSize   = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, headerBtn)
+
+    local arrow = make("TextLabel", {
+        Size       = UDim2.new(0, 20, 1, 0),
+        Position   = UDim2.new(1, -24, 0, 0),
+        BackgroundTransparency = 1,
+        Text       = "▼",
+        TextColor3 = THEME.textDim,
+        Font       = THEME.font,
+        TextSize   = 10,
+    }, headerBtn)
+
+    -- content frame
+    local content = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 0),
+        Position         = UDim2.new(0, 0, 0, 30),
+        BackgroundColor3 = THEME.bg,
+        ClipsDescendants = false,
+    }, wrapper)
+    corner(6, content)
+    pad(6, 6, 6, 6, content)
+    local cList = listLayout(4, content)
+
+    -- auto-size content and wrapper
+    local function refreshSizes()
+        local cH = cList.AbsoluteContentSize.Y + 12
+        content.Size  = UDim2.new(1, 0, 0, cH)
+        wrapper.Size  = UDim2.new(1, 0, 0, 30 + (content.Visible and cH + 2 or 0))
+    end
+    cList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refreshSizes)
+
+    local isOpen = defaultOpen or false
+    content.Visible = isOpen
+    arrow.Text = isOpen and "▲" or "▼"
+    refreshSizes()
+
+    headerBtn.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        content.Visible = isOpen
+        arrow.Text = isOpen and "▲" or "▼"
+        refreshSizes()
+    end)
+
+    local col = setmetatable({ _frame = content }, Container)
+    return col
+end
+
+function Container:addSameLine()
+    local row = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 32),
+        BackgroundTransparency = 1,
+    }, self._frame)
+
+    local children = {}
+
+    local sl = {}
+    function sl:addToggle(label, cb)
+        table.insert(children, {type="toggle", label=label, cb=cb})
+        self:_rebuild()
+    end
+    function sl:addButton(label, cb)
+        table.insert(children, {type="button", label=label, cb=cb})
+        self:_rebuild()
+    end
+    function sl:_rebuild()
+        for _, c in ipairs(row:GetChildren()) do
+            if not c:IsA("UIListLayout") then c:Destroy() end
+        end
+        local n = #children
+        for i, child in ipairs(children) do
+            local w = 1/n
+            if child.type == "toggle" then
+                local el = ElementBuilder.toggle(row, child.label, child.cb)
+                el.Size = UDim2.new(w, i < n and -3 or 0, 0, 32)
+                el.Position = UDim2.new(w * (i-1), i > 1 and 3 or 0, 0, 0)
+            elseif child.type == "button" then
+                local el = ElementBuilder.button(row, child.label, child.cb)
+                el.Size = UDim2.new(w, i < n and -3 or 0, 0, 32)
+                el.Position = UDim2.new(w * (i-1), i > 1 and 3 or 0, 0, 0)
+            end
+        end
+    end
+
+    return sl
+end
+
+-- ────────────────────────────────────────────────────────────
+-- Page
+-- ────────────────────────────────────────────────────────────
+local Page = setmetatable({}, {__index = Container})
+Page.__index = Page
+
+function Page.new(parent, label)
+    local scrollFrame = make("ScrollingFrame", {
+        Size             = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        ScrollBarThickness = 3,
+        ScrollBarImageColor3 = THEME.accent,
+        CanvasSize       = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Visible          = false,
+    }, parent)
+
+    pad(6, 6, 6, 6, scrollFrame)
+    local layout = listLayout(5, scrollFrame)
+
+    return setmetatable({
+        _frame   = scrollFrame,
+        _layout  = layout,
+        label    = label,
+    }, Page)
+end
+
+-- ────────────────────────────────────────────────────────────
+-- Main UI constructor
+-- ────────────────────────────────────────────────────────────
+function SimpleRenderWrapper.new(title, size)
+    local self = setmetatable({}, SimpleRenderWrapper)
+
+    -- ScreenGui
+    local gui = make("ScreenGui", {
+        Name            = "SimpleRenderWrapper",
+        ResetOnSpawn    = false,
+        ZIndexBehavior  = Enum.ZIndexBehavior.Sibling,
+    })
+
+    -- try to parent to CoreGui (executors), fallback to PlayerGui
+    local ok, _ = pcall(function()
+        gui.Parent = game:GetService("CoreGui")
+    end)
+    if not ok then
+        gui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    -- root window
+    local root = make("Frame", {
+        Name             = "Window",
+        Size             = UDim2.new(0, size.X, 0, size.Y + 36),
+        Position         = UDim2.new(0.5, -size.X/2, 0.5, -(size.Y+36)/2),
+        BackgroundColor3 = THEME.bg,
+        ClipsDescendants = true,
+    }, gui)
+    corner(10, root)
+    make("UIStroke", {Color = THEME.divider, Thickness = 1}, root)
+
+    -- title bar
+    local titleBar = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 36),
+        BackgroundColor3 = THEME.header,
+    }, root)
+    -- top corners only trick via extra frame
+    make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 10),
+        Position         = UDim2.new(0, 0, 1, -10),
+        BackgroundColor3 = THEME.header,
+    }, titleBar)
+
+    make("TextLabel", {
+        Size       = UDim2.new(1, -16, 1, 0),
+        Position   = UDim2.new(0, 12, 0, 0),
+        BackgroundTransparency = 1,
+        Text       = title,
+        TextColor3 = THEME.text,
+        Font       = THEME.fontBold,
+        TextSize   = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, titleBar)
+
+    -- close button
+    local closeBtn = make("TextButton", {
+        Size             = UDim2.new(0, 24, 0, 24),
+        Position         = UDim2.new(1, -28, 0.5, -12),
+        BackgroundColor3 = Color3.fromRGB(200, 60, 60),
+        Text             = "×",
+        TextColor3       = THEME.white,
+        Font             = THEME.fontBold,
+        TextSize         = 16,
+        AutoButtonColor  = false,
+    }, titleBar)
+    corner(6, closeBtn)
+    closeBtn.MouseButton1Click:Connect(function()
+        root.Visible = not root.Visible
+    end)
+
+    makeDraggable(titleBar, root)
+
+    -- tab bar
+    local tabBar = make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 28),
+        Position         = UDim2.new(0, 0, 0, 36),
+        BackgroundColor3 = THEME.header,
+    }, root)
+    make("Frame", {
+        Size             = UDim2.new(1, 0, 0, 10),
+        BackgroundColor3 = THEME.header,
+    }, tabBar)
+    local tabList = make("UIListLayout", {
+        FillDirection  = Enum.FillDirection.Horizontal,
+        SortOrder      = Enum.SortOrder.LayoutOrder,
+        Padding        = UDim.new(0, 2),
+    }, tabBar)
+    pad(4, 4, 6, 6, tabBar)
+
+    -- page container
+    local pageContainer = make("Frame", {
+        Size     = UDim2.new(1, 0, 1, -64),
+        Position = UDim2.new(0, 0, 0, 64),
+        BackgroundTransparency = 1,
+    }, root)
+
+    self._gui           = gui
+    self._root          = root
+    self._tabBar        = tabBar
+    self._pageContainer = pageContainer
+    self._pages         = {}
+    self._tabBtns       = {}
+
+    return self
+end
+
+function SimpleRenderWrapper:addPage(label)
+    local page = Page.new(self._pageContainer, label)
+
+    local tabBtn = make("TextButton", {
+        Size             = UDim2.new(0, 0, 1, 0),
+        AutomaticSize    = Enum.AutomaticSize.X,
+        BackgroundColor3 = THEME.element,
+        Text             = "  " .. label .. "  ",
+        TextColor3       = THEME.textDim,
+        Font             = THEME.font,
+        TextSize         = 12,
+        AutoButtonColor  = false,
+    }, self._tabBar)
+    corner(5, tabBtn)
+    pad(0, 0, 8, 8, tabBtn)
+
+    table.insert(self._pages, page)
+    table.insert(self._tabBtns, tabBtn)
+
+    local function selectPage(idx)
+        for i, p in ipairs(self._pages) do
+            p._frame.Visible = (i == idx)
+            self._tabBtns[i].TextColor3       = (i == idx) and THEME.text    or THEME.textDim
+            self._tabBtns[i].BackgroundColor3 = (i == idx) and THEME.accent  or THEME.element
+        end
+    end
+
+    local myIdx = #self._pages
+    tabBtn.MouseButton1Click:Connect(function() selectPage(myIdx) end)
+
+    -- auto-select first page
+    if myIdx == 1 then
+        page._frame.Visible = true
+        tabBtn.TextColor3       = THEME.text
+        tabBtn.BackgroundColor3 = THEME.accent
+    end
+
+    return page
+end
+
+return SimpleRenderWrapper
